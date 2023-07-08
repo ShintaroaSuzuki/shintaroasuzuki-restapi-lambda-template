@@ -1,0 +1,30 @@
+extends: ["spectral:oas"]
+rules:
+  info-contact: false
+  operation-operationId: false
+  operation-tags: false
+  no-$ref-siblings: false
+
+  parameters-camelCase-alphanumeric:
+    description: Parameters must be camelCase
+    severity: error
+    recommended: true
+    message: "Parameter [{{value}}] is not camelCase"
+    given: $..parameters.*
+    then:
+      field: name
+      function: casing
+      functionOptions:
+        type: "camel"
+
+  properties-camelCase-alphanumeric:
+    description: All JSON Schema properties must be camelCase.
+    severity: error
+    recommended: true
+    message: "{{property}} is not camelCase"
+    given: $..properties
+    then:
+      field: "@key"
+      function: casing
+      functionOptions:
+        type: "camel"

@@ -1,0 +1,306 @@
+name: CI/CD
+on:
+  push:
+    branches:
+      - "master"
+      - "staging"
+      - "production"
+  pull_request:
+    types:
+      - "ready_for_review"
+    branches:
+      - "master"
+      - "staging"
+      - "production"
+jobs:
+  pytest:
+    name: Execute pytest for lambda function
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: mydb
+          MYSQL_USER: yaohiko
+          MYSQL_PASSWORD: mypassword
+          MYSQL_ROOT_PASSWORD: mypassword
+        ports:
+          - "3306:3306"
+        options: >-
+          --health-cmd "mysqladmin ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v3
+
+      - name: Execute Flyway migrate
+        uses: docker://flyway/flyway:latest
+        env:
+          FLYWAY_URL: jdbc:mysql://mysql:3306/mydb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8mb4
+          FLYWAY_USER: root
+          FLYWAY_PASSWORD: mypassword
+          FLYWAY_LOCATIONS: filesystem:./flyway/migration
+        with:
+          args: migrate
+
+      - name: Execute Flyway info
+        id: flyway_info
+        uses: docker://flyway/flyway:latest
+        env:
+          FLYWAY_URL: jdbc:mysql://mysql:3306/mydb?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8mb4
+          FLYWAY_USER: root
+          FLYWAY_PASSWORD: mypassword
+          FLYWAY_LOCATIONS: filesystem:./flyway/migration
+        with:
+          args: info
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          cd ./src
+          python -m pip install --upgrade pip
+          pip install pipenv
+          pipenv lock
+          pipenv sync --dev
+
+      # mockサーバを動かすために必要
+      - name: Set up Node
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Install dependencies for node
+        run: |
+          yarn install --frozen-lockfile
+
+      - name: Exec pytest
+        run: |
+          cd ./src
+          pipenv run test
+
+      - name: Pytest coverage comment
+        if: always()
+        uses: MishaKav/pytest-coverage-comment@main
+        with:
+          pytest-coverage-path: ./src/pytest-coverage.txt
+          junitxml-path: ./src/pytest.xml
+
+      - name: Notify to Slack
+        if: always()
+        uses: ./.github/actions/notify-slack
+        with:
+          job_name: Execute React Test
+          status: ${{ job.status }}
+          title: client pytest 結果
+          token: ${{ secrets.GITHUB_TOKEN }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  terraform:
+    name: Confirm terraform plan
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    outputs:
+      instance_id: ${{ steps.apply.outputs.instance_id }}
+      db_host: ${{ steps.apply.outputs.db_host }}
+      db_secret: ${{ steps.apply.outputs.db_secret }}
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v3
+
+      - name: Set up lambda function
+        run: |
+          cd src
+          ./setup.sh
+
+      - name: Set env to dev
+        if: ${{ github.base_ref == 'master' || github.ref == 'refs/heads/master' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_DEV }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}" >> $GITHUB_ENV
+          echo "TERRAFORM_DIR=./terraform/envs/dev" >> $GITHUB_ENV
+
+      - name: Set env to stg
+        if: ${{ github.base_ref == 'staging' || github.ref == 'refs/heads/staging' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_STG }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}" >> $GITHUB_ENV
+          echo "TERRAFORM_DIR=./terraform/envs/stg" >> $GITHUB_ENV
+
+      - name: Set env to prd
+        if: ${{ github.base_ref == 'production' || github.ref == 'refs/heads/production' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_PRD }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_PRD }}" >> $GITHUB_ENV
+          echo "TERRAFORM_DIR=./terraform/envs/prd" >> $GITHUB_ENV
+
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: terraform setup
+        uses: hashicorp/setup-terraform@v2
+        with:
+          terraform_wrapper: false
+
+      - name: setup tfcmt
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          TFCMT_VERSION: v3.4.1
+        run: |
+          wget "https://github.com/suzuki-shunsuke/tfcmt/releases/download/${TFCMT_VERSION}/tfcmt_linux_amd64.tar.gz" -O /tmp/tfcmt.tar.gz
+          tar xzf /tmp/tfcmt.tar.gz -C /tmp
+          mv /tmp/tfcmt /usr/local/bin
+          tfcmt --version
+
+      - name: terraform init
+        run: |
+          cd ${{ env.TERRAFORM_DIR }}
+          terraform init
+
+      - name: terraform plan
+        if: ${{ github.event_name == 'pull_request' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cd ${{ env.TERRAFORM_DIR }}
+          tfcmt plan -patch -- terraform plan -no-color -input=false
+
+      - name: terraform apply
+        id: apply
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          cd ${{ env.TERRAFORM_DIR }}
+          terraform apply -auto-approve
+          INSTANCE_ID=$(terraform output instance_id)
+          INSTANCE_ID=${INSTANCE_ID//\"}
+          DB_HOST=$(terraform output db_host)
+          DB_HOST=${DB_HOST//\"}
+          DB_SECRET=$(terraform output db_secret)
+          DB_SECRET=${DB_SECRET//\"}
+          DB_SECRET=$(gpg --symmetric --batch --passphrase "SECRET" --output - <(echo $DB_SECRET) | base64 -w0)
+          echo "instance_id=$INSTANCE_ID" >> $GITHUB_OUTPUT
+          echo "db_host=$DB_HOST" >> $GITHUB_OUTPUT
+          echo "db_secret=$DB_SECRET" >> $GITHUB_OUTPUT
+
+      - name: Notify to Slack
+        if: always()
+        uses: ./.github/actions/notify-slack
+        with:
+          job_name: Execute React Test
+          status: ${{ job.status }}
+          title: server terraform 結果
+          token: ${{ secrets.GITHUB_TOKEN }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+  migration_server:
+    name: Migration with Flyway to server
+    if: ${{ ! failure() && github.event_name == 'push' }}
+    needs: terraform
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v3
+
+      - name: Set env to dev
+        if: ${{ github.base_ref == 'master' || github.ref == 'refs/heads/master' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_DEV }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_DEV }}" >> $GITHUB_ENV
+          echo "TERRAFORM_DIR=./terraform/envs/dev" >> $GITHUB_ENV
+
+      - name: Set env to stg
+        if: ${{ github.base_ref == 'staging' || github.ref == 'refs/heads/staging' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_STG }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_STG }}" >> $GITHUB_ENV
+          echo "TERRAFORM_DIR=./terraform/envs/stg" >> $GITHUB_ENV
+
+      - name: Set env to prd
+        if: ${{ github.base_ref == 'production' || github.ref == 'refs/heads/production' }}
+        run: |
+          echo "AWS_ACCESS_KEY_ID=${{ secrets.AWS_ACCESS_KEY_ID_PRD }}" >> $GITHUB_ENV
+          echo "AWS_SECRET_ACCESS_KEY=${{ secrets.AWS_SECRET_ACCESS_KEY_PRD }}" >> $GITHUB_ENV
+          echo "TERRAFORM_DIR=./terraform/envs/prd" >> $GITHUB_ENV
+
+      - name: configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ap-northeast-1
+
+      - name: Decrypted DB secret
+        run: |
+          decrypted_value=$(gpg --decrypt --quiet --batch --passphrase "SECRET" --output - <(echo ${{ needs.terraform.outputs.db_secret }} | base64 --decode))
+          echo "DECRYPTED_DB_SECRET=$decrypted_value" >> $GITHUB_ENV
+
+      - name: Get secrets by name and by ARN
+        uses: aws-actions/aws-secretsmanager-get-secrets@v1
+        with:
+          secret-ids: |
+            DB_SECRET, ${{ env.DECRYPTED_DB_SECRET }}
+          parse-json-secrets: true
+
+      - name: Start SSM port forwarding
+        env:
+          INSTANCE_ID: ${{ needs.terraform.outputs.instance_id }}
+          DB_HOST: ${{ needs.terraform.outputs.db_host }}
+        run: |
+          aws ssm start-session \
+            --target $INSTANCE_ID \
+            --document-name AWS-StartPortForwardingSessionToRemoteHost \
+            --parameters '{"host":["'"$DB_HOST"'"],"portNumber":["3306"], "localPortNumber":["3307"]}' &
+
+      - name: Install Java
+        uses: actions/setup-java@v2
+        with:
+          distribution: "adopt-openj9"
+          java-version: "11"
+
+      - name: Install JDBC driver
+        run: |
+          wget https://dev.mysql.com/get/Downloads/Connector-J/mysql-connector-j_8.0.33-1ubuntu23.04_all.deb
+          sudo dpkg -i mysql-connector-j_8.0.33-1ubuntu23.04_all.deb
+
+      - name: Install Flyway
+        env:
+          FLYWAY_VERSION: 9.17.0
+        run: |
+          wget -qO- https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}.tar.gz | sudo tar xvz -C /opt
+          sudo mv /opt/flyway-${FLYWAY_VERSION} /opt/flyway
+          sudo ln -s /opt/flyway/flyway /usr/local/bin/flyway
+          sudo chmod +x /usr/local/bin/flyway
+          flyway --version
+
+      - name: Execute Flyway migrate
+        env:
+          FLYWAY_URL: jdbc:mysql://localhost:3307/yaohiko_labor_db?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC&useUnicode=true&characterEncoding=utf8mb4
+          FLYWAY_USER: ${{ env.DB_SECRET_USERNAME }}
+          FLYWAY_PASSWORD: ${{ env.DB_SECRET_PASSWORD }}
+          FLYWAY_LOCATIONS: filesystem:./flyway/migration
+        run: |
+          flyway migrate
+          flyway info
+
+      - name: Notify to Slack
+        if: always()
+        uses: ./.github/actions/notify-slack
+        with:
+          job_name: Execute React Test
+          status: ${{ job.status }}
+          title: server migration 結果
+          token: ${{ secrets.GITHUB_TOKEN }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}

@@ -1,0 +1,11 @@
+/node_modules
+.DS_Store
+redoc-static.html
+report.html.html
+report.html.json
+openapi/employee_openapi_without_auth.yml
+openapi/user_openapi_without_auth.yml
+/sessionmanager-bundle
+sessionmanager-bundle.zip
+flyway/report.html
+flyway/report.json

@@ -1,0 +1,52 @@
+openapi: "3.0.1"
+servers:
+  - url: https://sample.com/api
+    description: Development server
+info:
+  title: "sample_api"
+  version: "2023-07-02 07:00:00UTC"
+  description: "サンプル"
+paths:
+  /auth/check:
+    get:
+      description: "トークンが有効かどうかを検証します"
+      responses:
+        "200":
+          description: "成功"
+        "401":
+          description: "トークンが無効"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/error"
+      security:
+        - cognito: []
+      x-amazon-apigateway-integration:
+        $ref: "#/components/x-amazon-apigateway-integrations/nothing"
+components:
+  schemas:
+    error:
+      type: "object"
+      properties:
+        message:
+          type: "string"
+          example: "error"
+  securitySchemes:
+    cognito:
+      type: "oauth2"
+      flows: {}
+      x-amazon-apigateway-authorizer:
+        identitySource: "$request.header.Authorization"
+        jwtConfiguration:
+          audience:
+            - "${cognito_client_id}"
+          issuer: "https://cognito-idp.ap-northeast-1.amazonaws.com/${cognito_user_pool_id}"
+        type: "jwt"
+  x-amazon-apigateway-integrations:
+    nothing:
+      uri: "${arn_nothing}"
+      payloadFormatVersion: "2.0"
+      type: "aws_proxy"
+      httpMethod: "POST"
+      credentials: "${arn_invoke_role}"
+      connectionType: "INTERNET"

@@ -1,0 +1,31 @@
+name: Notify to Slack
+description: Notify to Slack
+inputs:
+  job_name:
+    description: job name
+    required: true
+  status:
+    description: job status
+    required: true
+  title:
+    description: title
+    required: true
+  token:
+    description: github token
+    required: true
+  webhook_url:
+    description: Slack Webhook URL
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: Notify to Slack
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ inputs.status }}
+        author_name: ${{ inputs.title }}
+        job_name: ${{ inputs.job_name }}
+        fields: repo, commit, author, job, took, eventName, workflow, pullRequest
+      env:
+        GITHUB_TOKEN: ${{ inputs.token }}
+        SLACK_WEBHOOK_URL: ${{ inputs.webhook_url }}

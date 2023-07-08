@@ -1,0 +1,4 @@
+CREATE TABLE
+    samples (
+        id INT UNSIGNED PRIMARY KEY AUTO_INCREMENT
+    );

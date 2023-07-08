@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+terraform fmt --recursive
+
+cd ./src
+pipenv run format
+cd ../openapi
+yarn prettier --write .
+bash -c "$(yarn bin spectral) lint employee_openapi.yml && ./type_lint.sh"
+bash -c "$(yarn bin spectral) lint user_openapi.yml && ./type_lint.sh"
