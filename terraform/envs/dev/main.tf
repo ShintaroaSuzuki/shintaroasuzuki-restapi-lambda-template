@@ -1,6 +1,6 @@
 terraform {
   backend "s3" {
-    bucket = "sonawaru-app-tfstate"
+    bucket = "${local.app_name}-tfstate"
     key    = "terraform.tfstate"
     region = "ap-northeast-1"
   }

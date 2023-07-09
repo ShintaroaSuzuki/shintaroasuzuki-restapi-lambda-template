@@ -13,4 +13,5 @@ locals {
   stg_domain  = "stg-app.${local.domain}"
   prd_domain  = "app.${local.domain}"
   site_domain = var.env_name == "dev" ? local.dev_domain : var.env_name == "stg" ? local.stg_domain : local.prd_domain
+  app_name    = "sonawaru"
 }

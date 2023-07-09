@@ -28,7 +28,7 @@ resource "aws_security_group" "vpc_lambda" {
 module "lambdas" {
   source           = "./lambdas"
   lambda_exec_role = aws_iam_role.lambda_iam_role.arn
-  db_name          = aws_rds_cluster.sonawaru_app_db.database_name
+  db_name          = aws_rds_cluster["${local.app_name}_db"].database_name
   proxy_endpoint   = aws_db_proxy.rds_proxy.endpoint
   subnet_ids = [
     aws_subnet.private_1a.id,

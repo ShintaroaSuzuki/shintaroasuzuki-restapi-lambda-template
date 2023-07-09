@@ -159,7 +159,7 @@ resource "aws_iam_role" "cognito_sms" {
                 {
                     Condition = {
                             StringEquals = {
-                                "sts:ExternalId" = "sonawaru"
+                                "sts:ExternalId" = "${local.app_name}"
                             }
                         }
                     Action    = "sts:AssumeRole"

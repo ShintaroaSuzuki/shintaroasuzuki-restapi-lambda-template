@@ -34,7 +34,7 @@ resource "aws_db_proxy" "rds_proxy" {
   auth {
     auth_scheme = "SECRETS"
     iam_auth    = "REQUIRED"
-    secret_arn  = aws_rds_cluster.sonawaru_app_db.master_user_secret[0].secret_arn
+    secret_arn  = aws_rds_cluster.${local.app_name}_db.master_user_secret[0].secret_arn
   }
 }
 
@@ -49,7 +49,7 @@ resource "aws_db_proxy_default_target_group" "rds_proxy" {
 }
 
 resource "aws_db_proxy_target" "rds_proxy" {
-  db_cluster_identifier = aws_rds_cluster.sonawaru_app_db.id
+  db_cluster_identifier = aws_rds_cluster.${local.app_name}_db.id
   db_proxy_name         = aws_db_proxy.rds_proxy.name
   target_group_name     = aws_db_proxy_default_target_group.rds_proxy.name
 }
@@ -67,7 +67,7 @@ resource "aws_db_proxy_endpoint" "read_only" {
 
 // RDS ClusterのセキュリティグループにRDS Proxyから3306ポートで通信出来る設定を後追いで追加
 resource "aws_security_group_rule" "rds_from_rds_proxy" {
-  security_group_id        = aws_security_group.sonawaru_app_db.id
+  security_group_id        = aws_security_group.${local.app_name}_db.id
   type                     = "ingress"
   from_port                = "3306"
   to_port                  = "3306"

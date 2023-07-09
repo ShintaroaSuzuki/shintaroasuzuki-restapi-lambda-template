@@ -1,5 +1,5 @@
 resource "aws_cognito_user_pool" "user_pool" {
-  name = "${var.env_name}-sonawaru-app-user-pool"
+  name = "${var.env_name}-${local.app_name}-user-pool"
 
   admin_create_user_config {
     # ユーザーに自己サインアップを許可しないかどうか
@@ -10,7 +10,7 @@ resource "aws_cognito_user_pool" "user_pool" {
   sms_authentication_message = " 認証コードは {####} です。"
 
   sms_configuration {
-    external_id = "sonawaru"
+    external_id = "${local.app_name}"
     sns_caller_arn = aws_iam_role.cognito_sms.arn
     sns_region = "ap-northeast-1"
   }
@@ -42,7 +42,7 @@ resource "aws_cognito_user_pool" "user_pool" {
 }
 
 resource "aws_cognito_user_pool_client" "user_pool_client" {
-  name                          = "${var.env_name}-sonawaru-app"
+  name                          = "${var.env_name}-${local.app_name}"
   user_pool_id                 = aws_cognito_user_pool.user_pool.id
 
   # OAuthを今回使用しないため設定しない

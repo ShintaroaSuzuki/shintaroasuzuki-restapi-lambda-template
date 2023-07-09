@@ -3,9 +3,9 @@ output "instance_id" {
 }
 
 output "db_host" {
-  value = aws_rds_cluster.sonawaru_app_db.endpoint
+  value = aws_rds_cluster.${local.app_name}_db.endpoint
 }
 
 output "db_secret" {
-  value = aws_rds_cluster.sonawaru_app_db.master_user_secret[0].secret_arn
+  value = aws_rds_cluster.${local.app_name}_db.master_user_secret[0].secret_arn
 }

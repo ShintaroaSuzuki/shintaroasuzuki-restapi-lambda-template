@@ -33,7 +33,7 @@ resource "aws_security_group" "ec2_bastion" {
 
 // RDS ClusterのセキュリティグループにEC2から3306ポートで通信出来る設定を後追いで追加
 resource "aws_security_group_rule" "rds_from_ec2_bastion" {
-  security_group_id        = aws_security_group.sonawaru_app_db.id
+  security_group_id        = aws_security_group["${local.app_name}_db"].id
   type                     = "ingress"
   from_port                = "3306"
   to_port                  = "3306"
