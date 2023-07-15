@@ -7,6 +7,86 @@ info:
   version: "2023-07-02 07:00:00UTC"
   description: "サンプル"
 paths:
+  /auth:
+    get:
+      description: "Cookie に入っているリフレッシュトークンをもとにIDトークンを更新"
+      responses:
+        "200":
+          description: "成功"
+        "500":
+          description: "エラー"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/error"
+    post:
+      description: "ログインを試みた際に SMS に認証コードを送信"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                phone_number:
+                  type: "string"
+                  description: "電話番号"
+                  example: "09012345678"
+              required:
+                - "phone_number"
+      responses:
+        "200":
+          description: "成功"
+    delete:
+      description: "Cookie からトークンを削除"
+      responses:
+        "200":
+          description: "成功"
+        "401":
+          description: "トークンが無効"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/error"
+        "500":
+          description: "エラー"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/error"
+  /auth/verify:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                verificationCode:
+                  type: "string"
+                  description: "認証コード"
+                  example: "123456"
+              required:
+                - "verificationCode"
+      responses:
+        "200":
+          description: "成功"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  signInStatus:
+                    type: "string"
+                    description: "サインインステータス"
+                    enum:
+                      - "SUCCESS"
+                      - "VERIFY_REQUIRED"
+        "422":
+          description: "認証コードが間違っている"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schmea/error"
   /auth/check:
     get:
       description: "トークンが有効かどうかを検証します"
@@ -23,6 +103,64 @@ paths:
         - cognito: []
       x-amazon-apigateway-integration:
         $ref: "#/components/x-amazon-apigateway-integrations/nothing"
+  /auth/register:
+    post:
+      description: "cognito へユーザーを登録して認証コードを送信します"
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                phone_number:
+                  type: "string"
+                  description: "電話番号"
+                  example: "09012345678"
+              required:
+                - "phone_number"
+      responses:
+        "200":
+          description: "成功"
+        "409":
+          description: "すでにユーザーが登録されている"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/error"
+  /auth/register/verify:
+    post:
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: "object"
+              properties:
+                verificationCode:
+                  type: "string"
+                  description: "認証コード"
+                  example: "123456"
+              required:
+                - "verificationCode"
+      responses:
+        "200":
+          description: "成功"
+          content:
+            application/json:
+              schema:
+                type: "object"
+                properties:
+                  signInStatus:
+                    type: "string"
+                    description: "サインインステータス"
+                    enum:
+                      - "SUCCESS"
+                      - "VERIFY_REQUIRED"
+        "422":
+          description: "認証コードが間違っている"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schmea/error"
 components:
   schemas:
     error:
